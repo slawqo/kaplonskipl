@@ -1,0 +1,14 @@
+baseURL = "http://dev.kaplonski.pl/"
+languageCode = "pl"
+title = "kaplonski.pl - strona o mnie"
+theme = "after-dark"
+[[menu.main]]
+  name = "Home"
+  weight = 1
+  identifier = "home"
+  url = "/"
+[[menu.main]]
+  name = "O mnie"
+  weight = 2
+  identifier = "about"
+  url = "/about/"
