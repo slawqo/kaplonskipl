@@ -1,14 +1,25 @@
 baseURL = "http://dev.kaplonski.pl/"
 languageCode = "pl"
-title = "kaplonski.pl - strona o mnie"
-theme = "after-dark"
-[[menu.main]]
-  name = "Home"
-  weight = 1
-  identifier = "home"
-  url = "/"
-[[menu.main]]
-  name = "O mnie"
-  weight = 2
-  identifier = "about"
-  url = "/about/"
+title = "kaplonski.pl"
+theme = "nix"
+
+[menu]
+  [[menu.header]]
+    name = "post"
+    weight = 0
+    url = "/post"
+  [[menu.header]]
+    name = "about"
+    weight = 1
+    url = "/about"
+
+[params]
+  GithubID = "slaweq"
+  TwitterID = "slawqo"
+  LinkedInID = "sławomir-kapłoński-0aaa0770"
+  Name = "Sławek Kapłoński"
+  HeaderUsername = "slawek"
+  HeaderHostname = "homepage"
+  Email = "slawek@kaplonski.pl"
+  About = "info_about_you"
+  ProfilePicture = "/images/me.JPG"
