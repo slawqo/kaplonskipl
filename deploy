@@ -1,0 +1,8 @@
+#!/bin/sh
+USER=slawek
+HOST=kaplonski.pl
+DIR=public_html/kaplonskipl/
+
+hugo && rsync -avz --delete public/ ${USER}@${HOST}:~/${DIR}
+
+exit $?
