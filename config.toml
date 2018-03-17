@@ -1,7 +1,7 @@
 baseURL = "http://dev.kaplonski.pl/"
 languageCode = "pl"
 title = "kaplonski.pl"
-theme = "nix"
+theme = "hugo-theme-nix"
 
 [menu]
   [[menu.header]]
