@@ -1,5 +1,5 @@
 baseURL = "http://kaplonski.pl/"
-languageCode = "pl"
+languageCode = "en"
 title = "kaplonski.pl"
 theme = "hugo-theme-nix"
 
