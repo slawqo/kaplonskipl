@@ -1,6 +1,6 @@
 #!/bin/sh
-USER=slawek
-HOST=kaplonski.pl
+USER=$FTP_USER
+HOST=ftp.cluster015.hosting.ovh.net
 DIR=public_html/kaplonskipl/
 
 hugo && rsync -avz --delete public/ ${USER}@${HOST}:~/${DIR}
