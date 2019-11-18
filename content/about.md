@@ -11,18 +11,18 @@ a Master's degree from _electronics and telecommunication_ in 2007
 and a Master's degree from _software engineering_ in 2013.
 
 ## Work
-Since novemer 2010 I work for [OVH](https://ovh.pl). I started as technical
+Since novemer 2010 I worked for [OVH](https://ovh.pl). I started as technical
 expert at 1st line technical support. After few years I moved to R&D team and I
-started my journey as a devops engineer in [Public
+started my journey as a software and devops engineer in [Public
 Cloud](https://www.ovh.co.uk/public-cloud/instances/) R&D team where I first
 time heard about [OpenStack](https://openstack.org).
 
-In OVH I was working on first OpenStack based Runabove and later
-also their Public Cloud offers. I was working with puppet modules to prepare
+In OVH I was working on first OpenStack based cloud offer called Runabove,
+and later also their Public Cloud offers. I was working with puppet modules to prepare
 deployment system as well as python's code to fix bugs which we found in
 OpenStack code or to add some features which we needed in those days.
 
-Later, in 2018 I joined to Red Hat to work as a developer of OpenStack Neutron
+Later, in 2018 I joined Red Hat to work as a developer of OpenStack Neutron
 project.
 In Red Hat I am working on maintaining and developing new features in upstream
 OpenStack Neutron project as well as on Red Hat's product based on OpenStack,
