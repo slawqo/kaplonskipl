@@ -5,12 +5,16 @@ theme = "hugo-theme-nix"
 
 [menu]
   [[menu.header]]
+    name = "blog"
+    weight = 1
+    url = "/blog"
+  [[menu.header]]
     name = "lectures"
-    weight = 0
+    weight = 1
     url = "/lectures"
   [[menu.header]]
     name = "about_me"
-    weight = 1
+    weight = 0
     url = "/about"
 
 [params]
