@@ -415,9 +415,9 @@ experince and pleasure to be with all people from Neutron team and with some
 friends from other teams, like folks from Octavia or QA teams :)
 Below are some pictures from our team dinner.
 
-![team_dinner_photo_1](/images/Shanghai_PTG/IMG_6695.JPG)
+![team_dinner_photo_1](/images/Shanghai_PTG/IMG_5593.jpg)
 
-![team_dinner_photo_2](/images/Shanghai_PTG/IMG_6697.JPG)
+![team_dinner_photo_2](/images/Shanghai_PTG/IMG_5596.jpg)
 
 ![team_dinner_photo_3](/images/Shanghai_PTG/IMG_4185.jpeg)
 
