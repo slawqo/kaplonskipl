@@ -1,6 +1,7 @@
 ---
 title: "My Summary of OpenStack PTG in Shanghai"
 date: 2019-11-15T13:56:24+01:00
+tags: ["openstack"]
 draft: false
 ---
 
