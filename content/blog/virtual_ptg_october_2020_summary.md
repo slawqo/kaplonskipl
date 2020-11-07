@@ -1,6 +1,7 @@
 ---
 title: "Virtual PTG October 2020 - summary of the Neutron sessions"
 date: 2020-11-02T23:16:59+01:00
+tags: ["openstack"]
 draft: false
 ---
 

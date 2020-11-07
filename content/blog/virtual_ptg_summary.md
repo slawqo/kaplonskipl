@@ -1,6 +1,7 @@
 ---
 title: "My summary of the OpenStack Virtual_PTG July 2020"
 date: 2020-06-10T22:59:35+01:00
+tags: ["openstack"]
 draft: false
 ---
 
