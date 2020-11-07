@@ -9,6 +9,11 @@ theme = "hugo-theme-nix"
     weight = 1
     url = "/blog"
   [[menu.header]]
+    name = "tags"
+    identifier = "tags"
+    weight = 1
+    url = "/tags"
+  [[menu.header]]
     name = "lectures"
     weight = 1
     url = "/lectures"
