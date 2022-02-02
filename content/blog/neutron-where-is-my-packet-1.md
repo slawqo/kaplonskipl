@@ -53,8 +53,8 @@ by step the packet flow in various scenarios and how to troubleshoot
 connectivity issues in those scenarios.
 
 I plan to describe:
-* E-W and N-S traffic in vxlan tenant network, vlan provider network and
-  centralized router,
+* [E-W and N-S traffic in vxlan tenant network, vlan/flat provider network and
+  centralized router](/blog/neutron-where-is-my-packet-2),
 * E-W and N-S traffic in vxlan tenant network, vlan provider network, and DVR
   router,
 * Trunk ports - connectivity between 2 VMs.
