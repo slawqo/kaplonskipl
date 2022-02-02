@@ -1086,3 +1086,8 @@ I hope this is somewhow useful for You and that it will help understand how
 Neutron with the ML2 and OVS backend does networking in general. If You have any
 suggestions or questions about it, please contact me via IRC or email - see
 [contact](https://kaplonski.pl/about/) for contact details.
+
+## Special Thanks
+
+Special thanks to [Miguel Lavalle](https://www.miguellavalle.com/?) who helped
+me a lot by reviewing this article!
