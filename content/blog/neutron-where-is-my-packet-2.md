@@ -1,7 +1,7 @@
 ---
 title: "OpenStack Networking - Where Is My Packet - tunnel tenant networks, centralized routers"
-date: 2022-01-21T20:32:52+01:00
-draft: true
+date: 2022-02-02T10:32:52+01:00
+draft: false
 ---
 
 ## Intro
