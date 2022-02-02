@@ -6,23 +6,22 @@ draft: true
 
 ## Intro
 
-This is first post about how to track packet flow in the OpenStack Neutron
-connectivity. I want to focus here on the packet flows to/from virtual machines
-in such scenario. If You look for the detailed description e.g. about how
-Neutron agents works together, please refer to the upstream [Neutron
-Documentation](https://docs.openstack.org/neutron/latest/admin/).  Everything
-what will be described in that post is related to the case when Neutron is used
-with the ``ML2`` core plugin and the ``openvswitch`` mechanism driver.
-Everything what will be shown in this article requires access to the OpenStack
-cluster nodes as root user. Access to the OpenStack API will is not enough to do
-the same things.
+This is the first post on how to track packet flows in OpenStack Neutron
+connectivity. I want to focus here on packet flows to/from virtual machines in a
+scenario with the `ML2` core plugin and the `openvswitch` mechanism driver. Some
+of the demonstrated steps and commands require access to the OpenStack API and
+others require root user privileges in the nodes of the OpenStack cluster. For a
+detailed description on how Neutron agents work together, please refer to the
+upstream [Neutron
+Documentation](https://docs.openstack.org/neutron/latest/admin/).
 
 ### Test environment
 
 I will do all of that on the small, virtual environment with 3 nodes deployed
-using [Devstack](https://docs.openstack.org/devstack/latest/): One “all-in-one”
-node which will run as controller and also as compute node, 2 “compute” nodes
-which will run only as compute nodes to host instances.
+using
+[Devstack](https://docs.openstack.org/devstack/latest/guides/multinode-lab.html):
+One “all-in-one” node which will run as controller and also as compute node, 2
+“compute” nodes which will run only as compute nodes to host instances.
 
 From the Neutron perspective it looks like below:
 
@@ -46,27 +45,27 @@ $ openstack network agent list
 
 ### Use case scenario
 
-In this article I want to describe in details case with:
+In this article I want to describe in details a case with:
 * Tunnel (vxlan) tenant network,
-* Flat provider network (for vlan network it will be very similar, I will
+* Flat provider network (for vlan network it would be very similar, I will
   highlight later the differences between those two types of the provider
   networks),
 * 2 Virtual Machines connected to the tenant network:
-    * vm1 run on the ``devstack-ubuntu-compute-1`` node,
-    * vm2 run on the ``devstack-ubuntu-compute-2`` node,
+    * vm1 running on the `devstack-ubuntu-compute-1` node,
+    * vm2 running on the `devstack-ubuntu-compute-2` node,
 * Legacy router - I will also show differences between legacy router and
   centralized HA routers,
 * Floating IP attached to one of the instances, the other one will have access
   to the “internet” using SNAT functionality of the router.
 
-All of that is shown on the image below:
+All of this is shown on the image below:
 
 ![network-topology](/images/debugging-neutron/legacy-routing/network-topology.png)
 
 
-Resources which I used while I was writing this article are like below:
+Resources that I used while writing this article are the following:
 
-* provider network, named ``public``
+* provider network, named `public`
 
 ```bash
 $ openstack network show public
@@ -104,7 +103,7 @@ $ openstack network show public
 +---------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ```
 
-* tenant, tunnel network - named ``private``
+* tenant, tunnel network - named `private`
 
 ```bash
 $ openstack network show private
@@ -142,7 +141,7 @@ $ openstack network show private
 +---------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ```
 
-* router - named ``router1``
+* router - named `router1`
 
 ```bash
 $ openstack router show router1
@@ -171,7 +170,7 @@ $ openstack router show router1
 +-------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ```
 
-* virtual machines - named ``vm1`` and ``vm2``
+* virtual machines - named `vm1` and `vm2`
 
 ```bash
 $ openstack server list
@@ -183,7 +182,7 @@ $ openstack server list
 +--------------------------------------+------+--------+---------------------------------------------------------------------+--------------------------+----------+
 ```
 
-* Floating IP associated with ``vm1``
+* Floating IP associated with `vm1`
 
 ```bash
 $ openstack port list --device-id d0c91162-3607-4fcc-b22f-5d04f51bc431
@@ -223,36 +222,37 @@ $ openstack floating ip create --port 3e399bf2-3185-4ed2-8a6b-1d79b84c9605 publi
 
 ## Trace packets
 
-Firts of all, I think that it's worth to see how connectivity of the Virtual
-machine, DHCP port and router is done in such scenario. It is all shown on the
-picture from the Neutron documentation:
+First of all, I think it's worth seeing how connectivity of the virtual machine,
+DHCP port and router is done in a scenario like this. It is all shown in the
+diagram from the Neutron documentation:
 
 ![components_connectivity](https://docs.openstack.org/neutron/latest/_images/deploy-ovs-selfservice-compconn1.png)
 
-In this example, ``iptables_hybrid`` firewall driver is used on the compute
-node. That is because there is additional, Linuxbridge called ``qbr`` used
-between instance and the integration bridge (``br-int``). The other interface in
-the ``qbr`` bridge is the [veth
+In this example, the `iptables_hybrid` firewall driver is used in the compute
+node. With this driver, an additional Linuxbridge called `qbr` is needed between
+the instance and the integration bridge (`br-int`).  The other interface in the
+`qbr` bridge is the [veth
 pair](https://developers.redhat.com/blog/2018/10/22/introduction-to-linux-interfaces-for-virtual-networking#veth)
-which has second end plugged into the Openvswitch integration bridge
-(``br-int``). From that point wiring port is the neutron-ovs-agent's job.
-Another, worth to mention thing here is the fact that the DHCP service is placed
-in the compute node, but that isn't required. DHCP can be done on any node where
+which has its second end plugged into the Openvswitch integration bridge
+(`br-int`). From that point on wiring the port is the neutron-ovs-agent's job.
+Another thing worth mentioning here is the fact that the DHCP service is placed
+in the compute node, but that isn't required. DHCP can be done in any node where
 the Neutron DHCP agent is running.
 
 ### Creating new Virtual Machine - debugging DHCP
 
 Lets start from the beginning and create an instance (virtual machine) connected
 to the private, tenant network.
-When new virtual machine is spawned, and it is finally started by Nova, first
-thing which needs to be done is to get IP address from the DHCP server. Neutron
-has DHCP agent which is responsible to configure DHCP service for the networks.
-Typically such DHCP agent runs on the controller, or networker nodes. In case of
-this excercise there was one DHCP agent run on the
-``devstack-ubuntu-controller`` (all-in-one) node.
+When new virtual machine is spawned, and it is finally started by Nova, the
+first thing that needs to be done is to get an IP address from the DHCP server.
+Neutron's DHCP agent is responsible to configure the DHCP service for the
+virtual networks.  Typically such DHCP agent runs on the controller, or
+the networking nodes. In the case of this excercise there was one DHCP agent
+running in the `devstack-ubuntu-controller` (all-in-one) node.
 
-To configure DHCP service for network, Neutron DHCP agent creates network
-namespace called ``qdhcp-<network_uuid>`` and spawns ``dnsmasq`` process there:
+To configure the DHCP service for network, the Neutron DHCP agent creates a
+network namespace called `qdhcp-<network_uuid>` and spawns a `dnsmasq` process
+there:
 
 ```bash
 $ ip netns
@@ -265,18 +265,17 @@ $ sudo ip netns identify 322219
 qdhcp-5d90176f-d6e4-461e-94c1-c0f44e7cc52b
 ```
 
-Configuration files used by that dnsmasq process are usually in the
-`/var/lib/neutron/dhcp/<network_uuid>/` directory but it can be configured in
-Neutron and e.g. when it's deployed with Devstack, the folder is
-``/opt/stack/data/neutron/dhcp/<network_uuid>/``.
-For each port created in Neutron it adds static lease entry in the leases file
-always, so that we can be sure that the virtual machine will get that IP address
-which was really allocated for it by the Neutron.
+The leases configuration files used by the dnsmasq process are usually in the
+`/var/lib/neutron/dhcp/<network_uuid>/` but it can be placed e.g. in
+`/opt/stack/data/neutron/dhcp/<network_uuid>/` in when Neutron is deployed with
+Devstack.
+For each port created, there is an entry in the leases file, so virtual machines
+can get the IP addresses previously allocated for them by Neutron.
 
-Now, when VM boots, its operating system sends DHCP request to the network. If
-You look at the picture above, You can see that plug point to the network on the
-compute node is ``tap`` port in the ``qbr`` bridge. So lets check with tcpdump
-if the DHCP request is on that port:
+Now, when a VM boots, its operating system send a broadcast DHCP request to the
+network. If You look at the picture above, You can see that the plug point to
+the network in the compute node is the `tap` port in the `qbr` bridge. So let's
+check with tcpdump if the DHCP request is going through that port:
 
 ```bash
 $ sudo tcpdump -i tap3e399bf2-31 -nle not port 22
@@ -286,24 +285,28 @@ listening on tap3e399bf2-31, link-type EN10MB (Ethernet), capture size 262144 by
 15:50:12.816561 fa:16:3e:65:83:63 > fa:16:3e:3d:0f:f6, ethertype IPv4 (0x0800), length 370: 10.0.0.2.67 > 10.0.0.57.68: BOOTP/DHCP, Reply, length 328
 ```
 
-Here we see the BOOTP/DHCP request from the VM that is being send.
+Here we can indeed see the BOOTP/DHCP request send by the VM.
 
 ---
 **REMEMBER**
 
-That ``tap`` interface to which Virtual Machine is plugged is the point where everything what is going from the VM should be visible, ALWAYS. If something is not visible with tcpdump here, it means that guest operating system did not sent it at all and the issue is somewhere in the guest VM for sure.
+That the `tap` interface to which the virtual machine is plugged is the point
+where everything that is going from the VM should be visible, ALWAYS. If
+something is not visible with tcpdump here, it means that the guest operating
+system did not sent it at all and the issue is somewhere in the guest VM for
+sure.
 
 ---
 
 Now, if we see that this DHCP request is being send from the VM, as next step we
-can check if it is visible on the DHCP server's side.
-As I mentioned already, Neutron DHCP agent creates ``qdhcp-`` namespace and
-spawns dnsmasq server inside it. But it also creates ``tap`` interface which is
+can check if it is visible in the DHCP server's side.
+As I mentioned already, Neutron DHCP agent creates a `qdhcp-` namespace and
+spawns a dnsmasq server inside it. It also creates `tap` interface which is
 internal Openvswitch port plugged directly into the integration bridge
-(``br-int``). From that point, it is wired into the Neutron's network by the
-neutron-ovs-agent in exactly the same way like port which belongs to the Virtual
-Machine. And it You have access to the host, You can go into the ``qdhcp-``
-namespace and there check with tcpdump if the DHCP requests are comming to the
+(`br-int`). From that point on, it is wired into the Neutron's network by the
+neutron-ovs-agent in exactly same way as a port which belongs to the Virtual
+Machine. And if You have access to the host, You can go into the `qdhcp-`
+namespace and check there with tcpdump if the DHCP requests are getting to the
 dnsmasq service:
 
 ```bash
@@ -331,37 +334,41 @@ listening on tapdcb8a7b0-69, link-type EN10MB (Ethernet), capture size 262144 by
 
 ```
 
-Here, we can see that the DHCP request is comming to the instance and DHCP
-response is send back.
-In my case everything worked fine and I my vm received IP address from the DHCP
-server. But what if the DHCP request wouldn't be visible on the ``tap``
-interface in the ``dhcp-`` namespace? Or dnsmaq wouldn't reply?
-There can be few more steps which can be done to narrow down where the issue is.
+Here, we can see that the DHCP request is getting to the instance and the DHCP
+response is sent back.
+In my case everything worked fine and my vm received an IP address from the DHCP
+server. But what if the DHCP request wasn't visible in the `tap`
+interface in the `dhcp-` namespace? Or dnsmasq wasn't repling?
+There are a few more steps that we can take to narrow down where the issue is.
 
-* packets may be lost somewhere in the integration (``br-int``) or tunnel (``br-tun``) bridge on one of the nodes or
-* there is some problem with dnsmasq process.
+* packets may be lost somewhere in the integration (`br-int`) or tunnel
+  (`br-tun`) bridges in one of the nodes or
+* there is some problem with the dnsmasq process.
 
 #### Packet flow in the Openvswitch bridges
 
-First thing to check here which we need to do when we see packet, like DHCP
-request on the ``tap`` of the Virtual Machine but it's not on the ``tap`` in the
-``dhcp-`` namespace is to check if packets are actually going out from the
-compute node. We are using tunnel network with
-[vxlan](https://datatracker.ietf.org/doc/html/rfc7348) encapsulation in this
-example, so packets through various Open Flow rules in the ``br-int`` should be
-send to the tunnel bridge (``br-tun``) and there encapsulated into UDP packets
-and send to the wire. Let's see how it looks like in details:
+The first thing to do when we see packets, like DHCP requests, in the `tap` of
+the Virtual Machine but not in the `tap` of the `dhcp-` namespace, is to check
+if said packets are actually going out from the compute node. We are using a
+tunnel network with [vxlan](https://datatracker.ietf.org/doc/html/rfc7348)
+encapsulation in this example, so packets through various Open Flow rules in
+the `br-int` bridge should be sent to the tunnel bridge (`br-tun`) and be
+encapsulated there into UDP packets and sent in turn to the wire. Let's see
+what this looks like in detail:
 
-* first, lets check ``ofport`` number of the VM interface - please remember that in case when ``iptables_hybrid`` firewall driver is used, this is not ``tap`` but ``qvo`` interface:
+* first, lets check the `ofport` number of the VM interface, remembering that in
+  the case when the `iptables_hybrid` firewall driver is used, we are talking
+  about a `qvo` interface, not a `tap` (```3e399bf2-31``` is the beginning of the
+  port's UUID in Neutron database and it is used in the interface's name):
 
 ```bash
 sudo ovs-ofctl show br-int | grep 3e399bf2-31
  7(qvo3e399bf2-31): addr:fa:6e:de:ff:f3:66
 ```
 
-In this case ofport number for this port is ``7``.
+In this case the `ofport` number for this port is `7`.
 
-* Now Open Flow rules in the ``br-int`` bridge
+* Now Open Flow rules in the `br-int` bridge
 
 ```bash {lineos=table,hl_lines=[3,4,"10-13",17]}
 sudo ovs-ofctl dump-flows br-int
@@ -384,18 +391,17 @@ sudo ovs-ofctl dump-flows br-int
  cookie=0x369da291a727c114, duration=177905.039s, table=62, n_packets=0, n_bytes=0, priority=3 actions=NORMAL
 ```
 
-I marked with the blue color rules which are related to the traffic which is
-going out from the ``vm1``. You can use e.g. ``watch`` tool and e.g. filter out
-rules which have got ``n_packets=0`` to observer counters of the packets in
-other rules and to see through which rules Your traffic is going. Maybe for some
-reason it hits some rule with ``actions:drop`` and is dropped? Or it don't match
-any of the rules in one of the tables so is not processed further and,
+I marked with blue the rules related to the traffic
+going out from the `vm1`. You can use a tool like `watch` and pay attention
+to the `n_packets` field to see the rules packets are going through. Maybe, for some
+reason, it hits some rule with `actions:drop` and is dropped? Or it doesn't match
+any of the rules in one of the tables so is not processed further and is
 effectively dropped too?
-Finally, in this case it should hit rule with ``actions:NORMAL`` from
-``table=60``. That ``actions:NORMAL`` means that Openvswitch should process
+Finally, in this case it should hit the rule with `actions:NORMAL` from
+`table=60`. That `actions:NORMAL` means that Openvswitch should process
 packet as any other switch would do. More about it is in the [Openvswitch man
 pages](https://man7.org/linux/man-pages/man7/ovs-actions.7.html). In our case,
-packets should be send through the patch port ``patch-tun`` to the tunnel
+packets should be sent through the patch port patch-tun to the tunnel
 bridge.
 
 Openflow rules in the br-tun:
@@ -418,24 +424,23 @@ sudo ovs-ofctl dump-flows br-tun
  cookie=0x3afc26c166dbc0d5, duration=178529.400s, table=22, n_packets=23123, n_bytes=3644790, priority=0 actions=drop
 ```
 
-There are interesting things happening here. First packets which are comming
-from the br-int are hitting the rule in table=0 from which are resubmitted to
-table 2.
-In table 2 there are basically 2 rules: one from broadcast and one for unicast
-packets. In case of the DHCP request, which is broadcast, it matches first rule
-there and is resubmitted to the table 22. In the table 22 the packets which
-match correct vlan_id (2 in our case) have stipped that vlan_id, load VNI proper
-for the neutron network (``segmentation_id`` in the Neutron network's
-parameters) and send to the ``vxlan-`` interfaces which are connected with
-other nodes in the cluster.
+There are interesting things happening here. First packets coming from `br-int`
+are hitting the rule in `table=0`, which resubmits them to `table 2`, where
+there are basically 2 rules: one for broadcast and one for unicast packets. In
+the case of the DHCP request, which is broadcast, it matches the first rule and
+the packet is resubmitted to `table 22`. In that table the packets that match
+the correct vlan_id (2 in our case) have that vlan id stripped off, get the VNI
+for the corresponding neutron network attached to them (segmentation_id in the
+Neutron network's parameters) and are sent to the vxlan- interfaces that are
+connected with other nodes in the cluster.
 
-Now, there may be a question what is that vlan_id set for the packets.
+Now, the reader might ask what is that vlan_id found in the packets.
 Basically, neutron uses internally vlan IDs to separate packets from different
-networks in each compute node. So that vlan_id=2 in this case is only internal
-thing on that compute node. On other node, packets from same network may use
-completly different vlan id and that's normal.
+networks in each compute node. So that vlan_id=2 in this case is only an internal
+thing on that compute node. In another node, packets from the same network may use
+a completely different vlan id and that's normal.
 To check what vlan_id is used for the network in some host, You can check
-``tag`` attribute of the ``tap`` or ``qvo`` port in the integration bridge:
+the `tag` attribute of the `tap` or the `qvo` port in the integration bridge:
 
 ```bash
 $ sudo ovs-vsctl list port qvo3e399bf2-31 | grep tag
@@ -443,9 +448,12 @@ other_config        : {net_uuid="5d90176f-d6e4-461e-94c1-c0f44e7cc52b", network_
 tag                 : 2
 ```
 
-Other question is: how to check if packets were actually send through the vxlan tunnel and which interface was used for that?
+Another question that might be asked is: how to check if packets were actually
+sent through the vxlan tunnel and which interface was used for that?
 
-Regarding interface, it is the kernel who decides that according to its routing table, so You can check what IP addresses are used to establish tunnel connection:
+In regards to the interface, it is the kernel who decides that according to its
+routing table, so You can check what IP addresses are used to establish tunnel
+connection:
 
 ```bash
 $ sudo ovs-vsctl show
@@ -488,27 +496,28 @@ $ ip route get 10.120.0.100
     cache
 ```
 
-Now, as we know which interface is used to send the vxlan packets, we can use
-tcpdump to check if there are send properly:
+Now, that we know which interface is used to send the vxlan packets, we can use
+tcpdump to check if there are actually sent out:
 
 ```bash
+$ sudo tcpdump -i br-infra -nel
 17:01:58.677926 8e:91:da:21:b2:49 > 56:1e:c3:34:49:40, ethertype IPv4 (0x0800), length 392: 10.120.0.101.48360 > 10.120.0.102.4789: VXLAN, flags [I] (0x08), vni 1707
 fa:16:3e:3d:0f:f6 > ff:ff:ff:ff:ff:ff, ethertype IPv4 (0x0800), length 342: 0.0.0.0.68 > 255.255.255.255.67: BOOTP/DHCP, Request from fa:16:3e:3d:0f:f6, length 300
 17:01:58.678526 c2:be:74:bf:4d:41 > 8e:91:da:21:b2:49, ethertype IPv4 (0x0800), length 420: 10.120.0.100.59227 > 10.120.0.101.4789: VXLAN, flags [I] (0x08), vni 1707
 fa:16:3e:65:83:63 > fa:16:3e:3d:0f:f6, ethertype IPv4 (0x0800), length 370: 10.0.0.2.67 > 10.0.0.57.68: BOOTP/DHCP, Reply, length 328
 ```
 
-If packets are not send to the wire here, it means that the issue is somewhere
-in the OpenFlow rule either in br-int or br-tun bridge.
-If packets are send properly, You can do the same verification on the node where
-the DHCP service for the network is to see if they are properly comming to that
-node. If not - the issue is somwhere outside OpenStack, in the underlay network.
+If packets are not sent to the wire here, it means that the issue is somewhere
+in the OpenFlow rules either in the `br-int` or `br-tun` bridge.  If packets are
+sent out as expected, You can do the same verification in the node running the
+DHCP service for the network, to see if they are actially arriving there.  If
+they are not - the issue is somwhere outside OpenStack, in the underlay network.
 
-If vxlan packets are comming to the physical interface in the node with DHCP
+If vxlan packets are arriving to the physical interface in the node with DHCP
 server, then we need to investigate Open Flow rules there to see how incomming
 traffic is treated.
 
-* first packets are going to the ``br-tun``
+* first packets are going to the `br-tun`
 
 ```bash {lineos=table,hl_lines=[3,9,12]}
 sudo ovs-ofctl dump-flows br-tun
@@ -531,18 +540,19 @@ sudo ovs-ofctl dump-flows br-tun
  cookie=0x14226289a54c3126, duration=184660.279s, table=22, n_packets=13, n_bytes=1158, priority=0 actions=drop
 ```
 
-Here packets are first comming through the rule in table=0 and are resubmitted
-to table=4. In table 4 there is rule which match on the ``vni`` for that network
-and based on that sets vlan_id for the packet (remember, that is this local vlan
-which can be different on each node for the same network). Next packets are
-resubmitted to table=10 where "magic" happens. There is rule which learns about
-mac addresses of the source of the packet and based on that it installs in the
-table=20 some rules. After that packet is send to the br-int.
+Here packets are first coming through the rule in `table=0` and are resubmitted
+to table=4. In table 4 there is a rule that matches on the `vni` for the network
+and based on that sets the corresponding vlan_id in the packet (remember, that
+this local vlan can be different on each node for the same network, as explained
+above). Next packets are resubmitted to `table=10`, where "magic" happens. There
+is rule which learns mac addresses of the source of the packet and based on that
+it installs in `table=20` some rules. After that, the packet is send to the
+`br-int`.
 
-That additional rule installed in table=20 helpes later if some packets will be
-send in the opposite direction as it will be known where the destination MAC
-actuall is so packet will not be flooded to all other tunnel ends but only to
-the proper one.
+That additional rule installed in `table=20` helpes later if some packets are
+sent in the opposite direction, because it will be known where the destination MAC
+actually is, so packets will not be flooded to all the tunnel ends but will be
+sent directly to the correct one.
 
 * Last step - integration bridge
 
@@ -559,24 +569,23 @@ sudo ovs-ofctl dump-flows br-int
  cookie=0xb7c139d9895c895b, duration=185061.812s, table=62, n_packets=0, n_bytes=0, priority=3 actions=NORMAL
 ```
 
-Here this is very easy - packet is going throug the rule in table=0 and then
-table=60 where it hits flow with ``actions=NORMAL``. Everything else is then
-done internally in openvswitch.
+Here it is very easy - the packet is going through the rule in `table=0` that
+resubmits it to `table=60` where it hits the flow with `actions=NORMAL`.
+Everything else is then done internally by openvswitch.
 
 One more thing - do You remember about that local vlan_id which was added to the
-packet in the br-int? The ``tap`` interface in the ``br-int`` also has set
-``tag`` to that value and this means that only packets with that vlan_id will be
-send to that port by openvswitch and vlan tag will be  automatically stripped
-before packet will go outside the openvswitch. That's why there is no any vlan
-tag visible on the packets inside Virtual Machines, or inside the ``qdhcp-``
-namespace.
+packet in the br-int? The `tap` interface in the `br-int` also has set `tag` to
+that value and this means that only packets with that vlan_id will be sent to
+that port by openvswitch and vlan tag will be automatically stripped off before
+the packet goes outside openvswitch. That's why there is no vlan tag visible in
+the packets inside Virtual Machines, or inside the `qdhcp-` namespace.
 
 #### Dnsmasq logs
 
-In case when DHCP requests is comming properly to the tap interface in the
-``qdhcp-`` namespace but there is no DHCP reply there, it may mean that problem
-is somewhere in the dnsmasq. To check that You can check dnsmasq logs in the
-journal log. In the working case there should be something like below in that
+If the DHCP requests are arriving correctly to the `tap` interface in the
+`qdhcp-` namespace, but there is no DHCP reply, it may mean that the problem
+is somewhere in dnsmasq. To check that You can look in the dnsmasq logs in the
+journal log. If everything is working properly, there should be something like the following in the
 log:
 
 ```bash
@@ -587,31 +596,31 @@ Jan 21 21:06:28 devstack-ubuntu-controller dnsmasq-dhcp[322219]: DHCPREQUEST(tap
 
 ```
 
-That is basically whole packet flow between Virtual Machine and the DHCP service
-when tunnel network is used in Neutron. If all of that works fine, Your instance
-should have properly configured IP address and should be accessible in the
-network.
+That is basically whole packet flow between a Virtual Machine and the DHCP
+service when tunnel networks are used in Neutron. If all of that works fine,
+Your instance should have a properly configured IP address and should be
+accessible in the network.
 
 ### Configuration of the Virtual Machine - debugging metadata connectivity issues
 
-Now, when Virtual Machine got IP address from the DHCP server, next step which
-is usually done during the boot process is to connect to the [metadata
+Now, once the Virtual Machine gets its IP address from the DHCP server, usually
+next step during the boot process is to connect to the [metadata
 service](https://docs.openstack.org/nova/latest/user/metadata.html) so that
 [cloud-init](https://cloudinit.readthedocs.io/en/latest/) can configure things,
 like e.g. SSH keys.
 
-Cloud-init is looking for the metada service on the IP address
-``169.254.169.254`` and is sending HTTP requests to that address. In OpenStack
-the way how metadata is provided to the Virtual Machines is like below:
+Cloud-init looks for the metadata service at `169.254.169.254` by sending HTTP
+requests to that address. In OpenStack the way metadata is provided to the
+Virtual Machines is as follows:
 
 ![Access to metadata service](/images/debugging-neutron/legacy-routing/metadata_access.png)
 
-Metadata for servers are stored in the Nova and that's why there is so many
-steps needed to have access to it. Lets go through that process step by step
+Metadata for servers are stored in Nova and that's why there are so many
+steps in access to them. Lets go through that process step by step
 now:
 
-* First Virtual Machine sends regular HTTP request to the
-  ``http://169.254.169.254`` address:
+* First the Virtual Machine send a regular HTTP request to the
+  `http://169.254.169.254` address:
 
 ```bash
 $ curl http://169.254.169.254
@@ -626,18 +635,18 @@ $ curl http://169.254.169.254
 2009-04-04
 ```
 
-* usually, when network is connected to the router in Neutron, this address is
+* When network is connected to a Neutron router, the metadata service address is
   simply reachable through default gateway configured in the Virtual Machine, so
-  it is basically send to the Neutron router's namespace, called
-  ``qrouter-<router_id>`` and created by L3 agent on the controller or dedicated
-  networker node.
+  requests are basically sent to the Neutron router's namespace, called
+  `qrouter-<router_id>` and created by the L3 agent on the controller or
+  dedicated networker node.
   Lets now focus a bit on how things are configured in the router's namespace.
-  For each subnet plugged to the router, there is interface called ``qr-XXX``
-  created there - it is very similar to the ``tap`` port created in the
-  ``qdhcp-`` namespace. The only difference between them is the naming
+  For each subnet plugged to the router, there is an interface called `qr-XXX`
+  created there and it is very similar to the `tap` port created in the
+  `qdhcp-` namespace. The only difference between them is the naming
   convention, other than that it's the same internal port in the integration
-  bridge (``br-int``).
-  To check on which node there is router hosted, Neutron API can be used:
+  bridge (`br-int`).
+  To find out in which node a router is hosted, the Neutron API can be used:
 
 ```bash
 $ openstack network agent list --router router1
@@ -648,8 +657,8 @@ $ openstack network agent list --router router1
 +--------------------------------------+------------+----------------------------+-------------------+-------+-------+------------------+
 ```
 
-In this case it is ``devstack-ubuntu-controller`` node. So lets go to that node
-and check what's in the ``qrouter-`` namespace:
+In this case it is `devstack-ubuntu-controller` node. So lets go to that node
+and check what's in the `qrouter-` namespace:
 
 ```bash
 $ sudo ip netns exec qrouter-50711ca1-1e58-44dc-bd95-a87250d5b4ae ip a
@@ -678,13 +687,13 @@ $ sudo ip netns exec qrouter-50711ca1-1e58-44dc-bd95-a87250d5b4ae ip a
        valid_lft forever preferred_lft forever
 ```
 
-There are 2 ``qr-`` interfaces there because there are 2 subnets plugged into
-that router (one IPv4 and one IPv6 subnet). There is also ``qg-`` interface,
-which is gateway to the external world for the router, but about that we will
-talk later.
+There are 2 `qr-` interfaces there because there are 2 subnets plugged into that
+router (one IPv4 and one IPv6 subnet). There is also `qg-` interface, which is
+the gateway to the external world for the router, but about that we will talk
+later.
 
-Now, lets get back to the metadata request. In the ``qrouter-`` namespace there
-is ``haproxy`` service running. This is ``Metadata proxy`` block in the picture
+Now, lets get back to the metadata request. In the `qrouter-` namespace there
+is a `haproxy` service running. This is the `Metadata proxy` block in the picture
 above:
 
 ```bash
@@ -692,8 +701,8 @@ ps aux | grep haproxy
 vagrant    17147  0.0  0.0  89168  4372 ?        Ssl  11:50   0:00 haproxy -f /opt/stack/data/neutron/ns-metadata-proxy/50711ca1-1e58-44dc-bd95-a87250d5b4ae.conf
 ```
 
-There are also iptables rules configured to send requests from 169.254.169.254
-to that haproxy which listens on the port ``9697``:
+There are also `iptables` rules configured to send requests from `169.254.169.254`
+to the haproxy instance, which listens on port `9697`:
 
 ```bash
 sudo ip netns exec qrouter-50711ca1-1e58-44dc-bd95-a87250d5b4ae iptables-save
@@ -711,78 +720,77 @@ COMMIT
 # Completed on Mon Jan 24 12:04:41 2022
 ```
 
-Of course, there is much more iptables rules configured in the ``qrouter-``
+Of course, there are many more iptables rules configured in the `qrouter-`
 namespace. I included here only those related to the metadata service.
-So ``iptables`` redirects HTTP requests to port ``9697`` and that comes to the
-haproxy where additional header ``X-Neutron-router-ID`` is added to it. This
-additional header is added so Neutron will be easily able to find port from
-which request was made by matching on the sender's IP address and the router-id
-(or network-id if it's all done on the ``qdhcp-`` namespace, but lets not focus
-on that case now).
+So `iptables` redirects HTTP requests to port `9697` so they can get to the
+haproxy instance where an additional header `X-Neutron-router-ID` is added to them. This
+additional header is added so Neutron can easily find the port from
+which the requests were made by matching on the sender's IP address and the router-id
+(or network-id if it's all done on the `qdhcp-` namespace, but lets not focus
+on that case for now).
 
 ---
 **REMEMBER**
 
-If for any reason HTTP requests made from the instance will be send with the IP
-address different than IP address allocated for the port in the Neutron
-database, Neutron will not be able to find id of the port thus ``HTTP 404``
+If for any reason the HTTP requests made from the instance are sent with an IP
+address different to the address allocated to the port in the Neutron database,
+then Neutron will not be able to find the id of the port and thus an `HTTP 404`
 error will be replied.
 
 ---
 
-* When ``neutron-metadata-agent`` receives modified request from the
-  ``haproxy``, it sends RPC request to the neutron server to get data about port
-  attached to the Virtual Machine. In the port's informations there is always
-  attribute called ``device_id`` and this is uuid of the virtual machine in the
-  Nova database.
+* When the `neutron-metadata-agent` receives the modified request from
+  `haproxy`, it sends an RPC request to the neutron server to get data about the
+  port attached to the Virtual Machine. In the port's information there is
+  always an attribute called `device_id` and this is the uuid of the virtual
+  machine in the Nova database.
 
-* Finally ``neutron-metadata-agent`` sends HTTP request to the nova-metadata-api
-  to get metadata for that specific virtual machine.
+* Finally the `neutron-metadata-agent` sends a HTTP request to the
+  `nova-metadata-api` to get the metadata for that specific virtual machine.
 
-* After ``neutron-metadata-agent`` receives response from the
-  ``nova-metadata-api`` it sends it back to the haproxy and from there to the
-  virtual machine.
+* After the `neutron-metadata-agent` receives response from the
+  `nova-metadata-api` it sends it back to the haproxy and from there it goes to
+  the virtual machine.
 
 #### Isolated networks
 
-Above example describes typical use case when Neutron's project network is
-plugged into the Neutron router. But there may be also the case when network is
+The above example describes the typical use case when a Neutron's project network is
+plugged into a Neutron router. But there may be also the case when the network is
 isolated and not plugged to any router. In such case metadata can be provided by
-the ``neutron-dhcp-agent``. In such case ``haproxy`` service is spawned in the
-``qdhcp-`` namespace and bound to the ``tap`` port there (the same one on which
-``dnsmasq`` works. The IP address ``169.254.169.254`` is in such case configured
-directly on the ``tap`` interface too so there is no need to use iptables to
-redirect requests to the haproxy.
+the `neutron-dhcp-agent`. In this situation the `haproxy` service is spawned in the
+`qdhcp-` namespace and bound to the `tap` port there (the same one on which
+`dnsmasq` works. The IP address `169.254.169.254` is in this case configured
+directly on the `tap` interface too, so there is no need to use iptables to
+redirect requests to the haproxy instance.
 
-I didn't describe really how packets with such HTTP request are flowing through
-the bridges and nodes to reach the ``qrouter`` namespace. The reason for that is
-simply that it's exactly the same like for the DHCP requests.
+I didn't describe really how packets with such HTTP requests flow through the
+bridges and nodes to reach the `qrouter` namespace, because it's exactly the
+same as in the case of DHCP requests.
 
 
 ### One Virtual Machine talks to the another one - debugging issues with connectivity between 2 VMs in the same L2 network
 
-Now, when virtual machines are spawned and configured by the cloud-init
-properly, they should be also able to communicate to each other.
+Now, when virtual machines are spawned and configured by cloud-init
+properly, they should also be able to communicate to each other.
 Packet flow between 2 instances is exactly the same as between virtual machine
-and e.g. DHCP namespace and the ``tap`` interface there. The only difference is
-that instead of ``tap`` interface in the ``qdhcp`` namespace on one side, there
-are virtual machines plugged to throug the ``qbr`` bridge to the integration
+and e.g. DHCP namespace and the `tap` interface there. The only difference is
+that instead of `tap` interface in the `qdhcp` namespace on one side, there
+are virtual machines plugged through the `qbr` bridge to the integration
 bridge.
-To understand where can be the problem with such communication, You need to make
-the same investigation with e.g. ``tcpdump`` and ``ovs-ofctl`` tools like
-described above in the *[debugging DHCP](#Creating-new-Virtual-Machine---debugging-DHCP)*
-section.
+When there are problems with type of communication, You need to carry out the
+same investigation with tools like tcpdump and ovs-ofctl as described above in
+the *[debugging DHCP](#Creating-new-Virtual-Machine---debugging-DHCP)* section.
 
 ### Connect to the Virtual Machine from the Internet
 
-Last thing which I want to describe in this article is connectivity of the
-Virtual Machine to the external world.
+The last thing I want to cover in this article is connectivity of
+Virtual Machines to the external world.
 As it is shown in the picture above, VM1 and VM2 are connected directly only to
-the private, tunnel network. This network don't have access to external world
+the private, tunnel network. This network doesn't have access to external world
 directly.
 
 But this private network is connected to the router which has configured also
-something what is called in Neutron as ``external gateway``:
+something what is known in Neutron as the `external gateway`:
 
 ```bash
 $ openstack router show router1
@@ -802,28 +810,28 @@ That external network can provide access to the external world for the instances
 plugged into the private networks.
 There are 3 possible ways to provide such access:
 
-* by attaching public IP address, called ``Floating IP`` to the port which
+* by attaching a public IP address, called a `Floating IP` to the port which
   belongs to the Virtual Machine - that way the VM has access to the external
   world using that Floating IP but also it can be reachable (e.g. SSH to it is
   possible) from the external world,
 
-* by using ``SNAT`` functionality of the router - in this was VM can reach
-  external world using the external_gateway's IP address (``10.10.0.240`` in the
+* by using the `SNAT` functionality of the router - in this way the VM can reach
+  external world using the external_gateway's IP address (`10.10.0.240` in the
   example above) but it can't be accessible from the external network in any
   way,
 
-* using ``port_forwarding`` functionality which can use same Floating IP address
-  for many VMs and redirect traffic comming to some specific TCP/UDP ports to
-  some TCP/UDP ports in the Virtual Machine.
+* using `port_forwarding` functionality which enables the sharing of one
+  Floating IP address among many VMs, by routing incomming traffic directed to
+  specific TCP/UDP ports to TCP/UDP ports in those VMs.
 
-In this article I will focus on the first 2 of mentioned above. I will not
-describe port forwarding here.
+In this article I will focus on the first 2 cases just mentioned. I will not
+describe port forwarding.
 
 #### Debugging connectivity through the Floating IPs
 
-Lets see what happens when Virtual Machine wants to reach out to some external
-service, for example ping ``8.8.8.8`` IP address.
-First such IP address should be reachable through the default gateway configured
+Lets see what happens when a Virtual Machine wants to reach out to some external
+service, for example ping the `8.8.8.8` IP address.
+First the IP address should be reachable through the default gateway configured
 in the instance:
 
 ```bash
@@ -832,7 +840,7 @@ default via 10.0.0.1 dev eth0
 10.0.0.0/26 dev eth0 scope link  src 10.0.0.57
 ```
 
-So when we will ping ``8.8.8.8`` from instance:
+So, when we ping `8.8.8.8` from the instance:
 
 ```bash
 $ ping 8.8.8.8 -c 1
@@ -844,11 +852,10 @@ PING 8.8.8.8 (8.8.8.8): 56 data bytes
 round-trip min/avg/max = 46.180/46.180/46.180 ms
 ```
 
-such packet is going through the private network to the ``qrouter`` namespace -
-for details how packet is flowing there through the bridges and tunnels, please
-refer to the sections above, it's exactly the same packet flow as when it
-communicates with the DHCP server, Metadata server or another VM connected to
-the same tunnel network.
+the packets go through the private network to the `qrouter` namespace flowing
+through bridges and tunnels in the exact same way as when the VM communicates
+with the DHCP server, the metadata server or another VM connected to the same
+tunnel network.
 
 ```bash
 $ sudo ip netns exec qrouter-50711ca1-1e58-44dc-bd95-a87250d5b4ae tcpdump -i qr-7297041d-55 -nvl
@@ -859,7 +866,7 @@ tcpdump: listening on qr-7297041d-55, link-type EN10MB (Ethernet), capture size 
     8.8.8.8 > 10.0.0.57: ICMP echo reply, id 49665, seq 0, length 64
 ```
 
-In the ``qrouter`` namespace there are iptables rules to do NAT:
+In the `qrouter` namespace there are iptables rules to do NAT:
 
 ```bash
 $ sudo ip netns exec qrouter-50711ca1-1e58-44dc-bd95-a87250d5b4ae iptables-save
@@ -870,7 +877,7 @@ $ sudo ip netns exec qrouter-50711ca1-1e58-44dc-bd95-a87250d5b4ae iptables-save
 -A neutron-l3-agent-PREROUTING -d 10.10.0.151/32 -j DNAT --to-destination 10.0.0.57
 ```
 
-So on the external gateway interface it should be visible as:
+On the external gateway interface it should be visible as:
 
 ```bash
 $ sudo ip netns exec qrouter-50711ca1-1e58-44dc-bd95-a87250d5b4ae tcpdump -i qg-abce46ac-61 -nvl
@@ -884,38 +891,37 @@ tcpdump: listening on qg-abce46ac-61, link-type EN10MB (Ethernet), capture size 
 
 ```
 
-As can be noticed, there was translation already done and packet is send away
-with ``10.10.0.151`` (Floating IP in Neutron) as source IP address.
+As it can be seen here, thanks to the address translation that took place in the
+router, the `ICMP` echo request is sent with `10.10.0.151` (Floating IP in
+Neutron) as the source IP address.
 
 #### Connection with the external network
 
-Here there is something completly new comming on. The packets are going through
-the ``qg-`` interface to the neutron network called ``public`` and this isn't
-tunnel network like the ``private`` one. That network is marked in neutron as
-``external`` network, which means that it can be set as external_gateway for the
-routers. It is network ``provider`` network in general and it can be of one of
-the two possible types:
+Here there is something completely new coming on. The packets are going through
+the `qg-` interface to the Neutron network called `public` which, unlike
+`private`, is not a tunnel network. `public` is marked in Neutron as an
+`external` network, which means that it can be used as the external_gateway for
+routers. It is a provider network and can be of one of two possible types:
 
 * flat - network without any segmentation id used,
 * vlan - uses vlans.
 
-Those networks are called ``provider`` networks as they need to be configured by
-the cloud provider in the underlay network as packets send from the OpenStack
-nodes through such network will be going through the underlay network directly.
-In case of the vlan networks, packets will go to the datacenter network with the
-configured vlan_id thus datacenter network devices needs to know about that
-vlan_id.
-In this example ``flat`` network is used but differences between them are really
-minor and I will later describe them.
+`provider` networks have that designation because they need to be configured by
+the cloud provider in the underlay physical networking fabric. Packets sent from
+the OpenStack nodes through such networks go through the underlay physical
+fabric directly.  In the case of `vlan` networks, packets go to the physical
+datacenter network with the configured vlan_id, so the datacenter network
+devices need to know about that vlan_id.
+In this example, a `flat` network is used, but differences between them are really
+minor and I will describe them later.
 
 ##### Packets flow in the provider networks
 
-Interface ``qg-`` from the router namespace is the same type of the internal
-port in the Openvswitch as mentioned earlier ``tap`` and ``qr`` interfaces. It
-is also plugged into integration bridge ``br-int``.
+Like `tap-` and `qr-` interfaces mentioned earlier, interface `qg-` from the
+router namespace is a port of type `internal` in Openvswitch. It is also plugged
+into the integration bridge `br-int`.
 
-Lets check Open Flow rules for traffic which is send from such ``qg-``
-interface:
+Lets examine Open Flow rules for traffic originating from such `qg-` interface:
 
 ```bash {lineos=table,hl_lines=[5,10]}
 $ sudo ovs-ofctl dump-flows br-int
@@ -931,12 +937,12 @@ $ sudo ovs-ofctl dump-flows br-int
  cookie=0xc609e5deded3773a, duration=7102.714s, table=62, n_packets=0, n_bytes=0, priority=3 actions=NORMAL
 ```
 
-Basically this traffix is just send to the ``table=60`` and from the ``NORMAL``
-action is performed. This means that packets will go through the ``int-br-ex``
-patch port which connects integration bridge with the proper external bridge,
-which in this case is named ``br-ex``.
+Basically this traffic is just sent to `table=60` where the `NORMAL` action is
+performed. This means that packets will go through the `int-br-ex` patch port,
+which connects the integration bridge with the the proper external bridge, which
+in this case is named `br-ex`.
 
-Open Flow rules in the ``br-ex`` bridge looks like:
+Open Flow rules in the `br-ex` bridge looks like:
 
 ```bash {lineos=table,hl_lines=[2]}
 sudo ovs-ofctl dump-flows br-ex
@@ -946,40 +952,40 @@ sudo ovs-ofctl dump-flows br-ex
 ```
 
 There is only one important rule for us here. It's the first one. It matches
-packets which comes from the ``phy-br-ex`` port (the other end of the patch port
-``int-br-ex``) with ``vlan_id=2`` (this is the local vlan_id used by
-neutron-ovs-agent). For such packets it strips vlan id and performs ``NORMAL``
+packets which come from the `phy-br-ex` port (the other end of the patch port
+`int-br-ex`) with `vlan_id=2` (this is the local vlan_id used by
+neutron-ovs-agent). For such packets it strips vlan id and performs `NORMAL`
 action. That action basically means in this case to send packets to the physical
 interface which should be one of the ports in that bridge.
 
 ---
 **REMEMBER**
 
-Each external bridge, like ``br-ex`` needs to be configured manually by the
-cloud operator and needs to have physical interface inside. Otherwise packets
-will not be send to the wire thus there will be no connectivity with external
+Each external bridge, like `br-ex` needs to be configured manually by the cloud
+operator and needs to have a physical interface inside. Otherwise packets will
+not be sent to the wire and there will be no connectivity with the external
 world using such network.
 
 ---
 
-Here there is that small different between ``flat`` and ``vlan`` networks. In
-case of ``vlan`` networks, instead of the ``strip_vlan`` action in the OpenFlow
-rule, there is ``mod_vlan_vid:<segmentation_id_vlan>`` there.
+Here we can see the small difference between `flat` and `vlan` networks. In
+the case of `vlan` networks, instead of the `strip_vlan` action in the OpenFlow
+rule, there is `mod_vlan_vid:<segmentation_id_vlan>`.
 
 #### Debugging connectivity from the external world to the VM using Floating IPs
 
-When there is ``Floating IP`` associated with the Virtual Machine, it can be
-reachable from outside as well. In this case, traffic is basically going from
-the physical interface to the ``br-ex`` bridge where it is simply processed by
-the ``NORMAL`` action:
+When there is a `Floating IP` associated with the Virtual Machine, it can be
+reached from outside as well. In this case, traffic is basically going from
+the physical interface to the `br-ex` bridge where it is simply processed by
+the `NORMAL` action:
 
 ```bash
  cookie=0xb255f8dd88f646a2, duration=7313.770s, table=0, n_packets=1496, n_bytes=171835, priority=0 actions=NORMAL
 ```
 
-and send to the integration bridge.
+and sent to the integration bridge.
 
-In the integration bridge it is going throug the rules:
+In the integration bridge it goes through the rules:
 
 ```bash {lineos=table,hl_lines=[3,10]}
 $ sudo ovs-ofctl dump-flows br-int
@@ -995,26 +1001,26 @@ $ sudo ovs-ofctl dump-flows br-int
  cookie=0xc609e5deded3773a, duration=7102.714s, table=62, n_packets=0, n_bytes=0, priority=3 actions=NORMAL
 ```
 
-The most important and interesting rule here is rule:
+The most important and interesting rule here is:
 
 ```
  cookie=0xc609e5deded3773a, duration=5754.608s, table=0, n_packets=767, n_bytes=116954, priority=3,in_port="int-br-ex",vlan_tci=0x0000/0x1fff actions=mod_vlan_vid:2,resubmit(,60)
 ```
 
-It matches packets which are comming from the ``int-br-ex`` patch port and have
-no vlan_id (``vlan_tci=0x0000/0x1fff``). For those packets it sets vlan_id=2
-(it's again the vlan_id used locally by the neutron-ovs-agent and can be
-different on each node for the same network, or can even be changed after
-restart of e.g. openvswitch). Then it is send to the table 60 where it hits rule
-with action ``NORMAL`` again so it is send to the proper interface, which in our
-case will be the ``qg-`` port.
+It matches packets comming from the `int-br-ex` patch port and have no vlan_id
+(`vlan_tci=0x0000/0x1fff`). For those packets it sets vlan_id=2 (again, this is
+the `vlan_id` used locally by the neutron-ovs-agent and can be different on each
+node for the same network, or can even be changed after restarting openvswitch).
+Then it is send to the `table 60` where it hits the rule with action `NORMAL`
+again, so it is sent to the proper interface, which in our case will be the
+`qg-` port.
 
 
 #### Debugging connectivity issues through the SNAT
 
 For connectivity using SNAT most of the parts are exactly the same as when
 Floating IP is used. The only differences here are in the iptables rules in the
-``qrouter`` namespace:
+`qrouter` namespace:
 
 ```bash
 $ sudo ip netns exec qrouter-50711ca1-1e58-44dc-bd95-a87250d5b4ae iptables-save
@@ -1036,9 +1042,9 @@ COMMIT
 ...
 ```
 
-Also, traffic is send through the ``qg-`` interface with different source IP
+Also, traffic is sent through the `qg-` interface with a different source IP
 address. As there is no IP address assigned only to that specific Virtual
-Machine, router's external_gateway's address is used:
+Machine, the router's external_gateway's address is used:
 
 ```bash
 sudo ip netns exec qrouter-50711ca1-1e58-44dc-bd95-a87250d5b4ae tcpdump -i qg-abce46ac-61 -nvl
@@ -1052,31 +1058,31 @@ tcpdump: listening on qg-abce46ac-61, link-type EN10MB (Ethernet), capture size 
 
 #### Bridge mappings
 
-I mentioned above that physical bridge, like "br-ex" needs to have physical
-interface plugged to be able to send traffic to the physical network.
-There can be more than one physical bridge in the node, if node has access to
-more than one physical network.
+I mentioned above that physical bridges, like `br-ex`, need to have a physical
+interface plugged to be able to send traffic to the corresponding physical
+network.  There can be more than one physical bridge in the node, if the node
+has access to more than one physical network.
 
-Now, how Neutron knows which physical bridge should be used for the Neutron
-network? To tell that to neutron-ovs-agent, there is very important
-configuration setting in the neutron-ovs-agent. It is called
-``bridge_mappings``. This config option is used to configure which bridge has
-access to what physical network (Neutron don't knows anything about NICs which
-are plugged to such physical network, that's why such NIC needs to be added to
-the bridge by the operator of the cloud).
-Networks in Neutron database have got attribute called
-``provider:physical_network`` and this has to match with one of the physical
-networks configured in the ``bridge_mappings`` - that way Neutron knows about
-which bridge should be used to connect to the specific provider network.
+Now, how does Neutron know which physical bridge should be used for the Neutron
+network? To tell that to neutron-ovs-agent, there is a very important
+configuration setting in the neutron-ovs-agent. It is called `bridge_mappings`.
+This config option is used to configure which bridge has access to what physical
+network (Neutron doesn't know which NICs are plugged to such physical network,
+that's why NIC information needs to be added to the bridge by the operator of the
+cloud).
+Networks have an attribute in the Neutron database called
+`provider:physical_network` which has to match with one of the physical
+networks set in the bridge_mappings configuration option - that way Neutron knows
+which bridge should be used to connect to which provider network.
 
 ## Next steps
 
 Here I wanted to write also about High Availiability routers (L3-ha) and how
-security groups are implemented by the ``neutron-ovs-agents`` using different
+security groups are implemented by the `neutron-ovs-agents` using different
 drivers but this post is already very long so I will write another posts for
 those additional things.
 
 I hope this is somewhow useful for You and that it will help understand how
-Neutron with ML2 and OVS backend is doing networking in general. If You have any
+Neutron with the ML2 and OVS backend does networking in general. If You have any
 suggestions or questions about it, please contact me via IRC or email - see
 [contact](https://kaplonski.pl/about/) for contact details.
